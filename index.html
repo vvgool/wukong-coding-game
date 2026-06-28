@@ -370,14 +370,85 @@
     font-size: 18px;
   }
 
-  /* ======= 响应式 ======= */
-  @media (max-width: 680px) {
-    .app { padding: 16px; }
-    :root { --cell-size: 44px; --gap: 2px; }
-    .title { font-size: 20px; }
-    .panel { max-width: 100%; }
-    .dpad { grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); }
-    .dpad-btn { width: 48px; height: 48px; font-size: 20px; }
+  /* ======= 平板竖屏 ======= */
+  @media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+    :root { --cell-size: 58px; }
+    .app { max-width: 540px; padding: 20px; }
+    .title { font-size: 22px; }
+    .main { flex-direction: column; align-items: center; }
+    .panel { max-width: 100%; flex-direction: row; flex-wrap: wrap; }
+    .panel-section { flex: 1; min-width: 200px; }
+    .dpad { grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(3, 52px); }
+    .dpad-btn { width: 52px; height: 52px; font-size: 22px; }
+    .stats { font-size: 14px; }
+    .stats span { padding: 3px 10px; }
+  }
+
+  /* ======= 平板横屏 ======= */
+  @media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+    :root { --cell-size: 54px; }
+    .app { max-width: 900px; padding: 20px 24px; }
+    .main { gap: 18px; }
+    .panel { max-width: 240px; }
+  }
+
+  /* ======= 电视/大屏（1080p+） ======= */
+  @media (min-width: 1280px) {
+    :root { --cell-size: 72px; --gap: 4px; }
+    .app { max-width: 1100px; padding: 30px 40px; border-radius: 18px; }
+    .title { font-size: 34px; }
+    .title .crown { font-size: 38px; }
+    .stats { font-size: 20px; gap: 20px; }
+    .stats span { padding: 8px 20px; border-radius: 28px; }
+    .main { gap: 32px; }
+    .panel { max-width: 360px; min-width: 260px; gap: 18px; }
+    .panel-section { padding: 20px; border-radius: 14px; }
+    .panel-section h3 { font-size: 18px; margin-bottom: 14px; }
+    .sequence-box { min-height: 60px; padding: 10px; }
+    .seq-arrow { width: 44px; height: 44px; font-size: 24px; border-radius: 8px; }
+    .dpad { grid-template-columns: repeat(3, 72px); grid-template-rows: repeat(3, 72px); gap: 6px; }
+    .dpad-btn { width: 72px; height: 72px; font-size: 32px; border-radius: 14px; }
+    .btn { padding: 14px 24px; font-size: 20px; border-radius: 12px; min-width: 100px; }
+    .message { font-size: 24px; min-height: 36px; }
+    .hint { font-size: 16px; }
+    .cell { font-size: 40px; border-radius: 6px; }
+    .modal { padding: 40px 50px; max-width: 500px; }
+    .modal h2 { font-size: 34px; }
+    .modal p { font-size: 20px; }
+    .modal .big-emoji { font-size: 80px; }
+    .grid-wrapper { padding: 6px; border-radius: 14px; }
+    .header { margin-bottom: 24px; }
+    .footer { margin-top: 24px; }
+  }
+
+  /* ======= 遥控器/手柄焦点指示 ======= */
+  .dpad-btn:focus-visible,
+  .btn:focus-visible,
+  .seq-arrow:focus-visible {
+    outline: 3px solid var(--gold);
+    outline-offset: 3px;
+    box-shadow: 0 0 12px rgba(218,165,32,0.5);
+  }
+
+  /* ======= 手柄连接指示器 ======= */
+  .controller-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #999;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    transition: all 0.3s;
+  }
+  .controller-indicator.active {
+    color: #43a047;
+    border-color: #43a047;
+    background: rgba(67,160,71,0.08);
+  }
+  @media (min-width: 1280px) {
+    .controller-indicator { font-size: 16px; gap: 8px; padding: 4px 12px; }
   }
 </style>
 </head>
@@ -436,7 +507,8 @@
         </div>
       </div>
 
-      <div class="hint">💡 点击方向键编排路径 → 按「执行」让悟空走一遍</div>
+      <div class="hint">💡 方向键编路 → 点「执行」让悟空走</div>
+      <div class="controller-indicator" id="ctrlIndicator">🎮 未检测到手柄</div>
     </div>
   </div>
 
@@ -940,23 +1012,193 @@ function setMessage(text, type = 'info') {
   msgEl.className = 'message ' + type;
 }
 
-// ======= 键盘支持 =======
+// ======= 键盘 & 遥控器支持 =======
+// 遥控器方向键 / 媒体键 / 数字键 映射
+const REMOTE_KEYS = {
+  // 数字键 → 快捷指令数
+  '1': null, '2': null, '3': null, '4': null,
+  '5': null, '6': null, '7': null, '8': null,
+  // 媒体键
+  'MediaPlayPause': 'exec',
+  'MediaStop': 'reset',
+  'MediaTrackPrevious': 'undo',
+  'MediaTrackNext': 'clear',
+  // 电视遥控器特殊键
+  'Back': 'undo',
+  'Exit': 'clear',
+  'ChannelUp': null,
+  'ChannelDown': null,
+};
+
 document.addEventListener('keydown', (e) => {
   const key = e.key;
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Backspace', 'Escape', 'r', 'R'].includes(key)) {
+  const preventKeys = [
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Enter', 'Backspace', 'Escape', 'Delete',
+    'r', 'R', ' ',
+    'MediaPlayPause', 'MediaStop', 'MediaTrackPrevious', 'MediaTrackNext',
+    'Back', 'Exit',
+  ];
+  if (preventKeys.includes(key)) {
     e.preventDefault();
   }
+
+  // 方向键 → 指令
   switch (key) {
-    case 'ArrowUp':    addDirection('up'); break;
-    case 'ArrowDown':  addDirection('down'); break;
-    case 'ArrowLeft':  addDirection('left'); break;
-    case 'ArrowRight': addDirection('right'); break;
-    case 'Enter':      if (!execBtn.disabled) executeSequence(); break;
-    case 'Backspace':  undoSequence(); break;
-    case 'Escape':     clearSequence(); break;
-    case 'r':
-    case 'R':          resetLevel(); break;
+    case 'ArrowUp':     addDirection('up'); return;
+    case 'ArrowDown':   addDirection('down'); return;
+    case 'ArrowLeft':   addDirection('left'); return;
+    case 'ArrowRight':  addDirection('right'); return;
   }
+
+  // 遥控器媒体键
+  switch (key) {
+    case 'MediaPlayPause':
+    case 'Enter':         if (!execBtn.disabled) executeSequence(); return;
+    case 'Backspace':
+    case 'Back':
+    case 'MediaTrackPrevious': undoSequence(); return;
+    case 'Escape':
+    case 'Exit':
+    case 'Delete':
+    case 'MediaTrackNext':    clearSequence(); return;
+    case 'MediaStop':
+    case 'r':
+    case 'R':                 resetLevel(); return;
+  }
+
+  // 空格键 = 执行（常用遥控器确认键）
+  if (key === ' ') {
+    e.preventDefault();
+    if (!execBtn.disabled) executeSequence();
+  }
+});
+
+// ======= Gamepad API（手柄/手柄支持） =======
+const ctrlIndicator = document.getElementById('ctrlIndicator');
+const GAMEPAD_POLL_INTERVAL = 150; // ms
+const GAMEPAD_DEADZONE = 0.5;
+
+// 手柄按键映射（标准映射）
+const GAMEPAD_MAP = {
+  // 方向键（buttons 12-15）
+  12: 'up',     // D-Pad Up
+  13: 'down',   // D-Pad Down
+  14: 'left',   // D-Pad Left
+  15: 'right',  // D-Pad Right
+  // 动作键
+  0:  'exec',   // A / Cross (执行)
+  1:  'undo',   // B / Circle (撤销)
+  2:  'clear',  // X / Square (清除)
+  3:  'reset',  // Y / Triangle (重来)
+  // 肩键
+  4:  null,     // LB
+  5:  null,     // RB
+  // 功能键
+  8:  'exec',   // Start / + (执行)
+  9:  'undo',   // Select / - (撤销)
+};
+
+// 手柄防抖
+let lastGamepadAction = {};
+let gamepadConnected = false;
+
+function updateControllerIndicator(connected) {
+  if (connected === gamepadConnected) return;
+  gamepadConnected = connected;
+  ctrlIndicator.textContent = connected
+    ? '🎮 手柄已连接！ D-Pad方向 A执行 B撤销 X清除 Y重来'
+    : '🎮 未检测到手柄';
+  ctrlIndicator.className = 'controller-indicator' + (connected ? ' active' : '');
+}
+
+function handleGamepadInput(gp) {
+  if (!gp) return;
+  const now = Date.now();
+
+  // 读取按键
+  const buttons = gp.buttons;
+  for (let i = 0; i < buttons.length; i++) {
+    if (!buttons[i].pressed) continue;
+    const action = GAMEPAD_MAP[i];
+    if (!action) continue;
+
+    // 防抖：同个按键 200ms 内不重复触发
+    if (lastGamepadAction[i] && now - lastGamepadAction[i] < 250) continue;
+    lastGamepadAction[i] = now;
+
+    switch (action) {
+      case 'up':    addDirection('up'); break;
+      case 'down':  addDirection('down'); break;
+      case 'left':  addDirection('left'); break;
+      case 'right': addDirection('right'); break;
+      case 'exec':
+        if (state.executing || state.phase === 'done') break;
+        if (state.sequence.length === 0) break;
+        executeSequence();
+        break;
+      case 'undo':  undoSequence(); break;
+      case 'clear': clearSequence(); break;
+      case 'reset': resetLevel(); break;
+    }
+  }
+
+  // 读取左摇杆（方向输入）
+  const axes = gp.axes;
+  if (axes.length >= 2) {
+    const ax = axes[0];
+    const ay = axes[1];
+    const now = Date.now();
+
+    // 用摇杆ID做防抖
+    const stickId = 'stick_' + gp.index;
+    if (Math.abs(ax) > GAMEPAD_DEADZONE || Math.abs(ay) > GAMEPAD_DEADZONE) {
+      if (!lastGamepadAction[stickId] || now - lastGamepadAction[stickId] > 300) {
+        if (Math.abs(ax) > Math.abs(ay)) {
+          if (ax < -GAMEPAD_DEADZONE) { addDirection('left'); lastGamepadAction[stickId] = now; }
+          else if (ax > GAMEPAD_DEADZONE) { addDirection('right'); lastGamepadAction[stickId] = now; }
+        } else {
+          if (ay < -GAMEPAD_DEADZONE) { addDirection('up'); lastGamepadAction[stickId] = now; }
+          else if (ay > GAMEPAD_DEADZONE) { addDirection('down'); lastGamepadAction[stickId] = now; }
+        }
+      }
+    }
+  }
+}
+
+function pollGamepads() {
+  try {
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let found = false;
+    for (const gp of gamepads) {
+      if (gp && gp.connected) {
+        found = true;
+        handleGamepadInput(gp);
+      }
+    }
+    updateControllerIndicator(found);
+  } catch (e) {
+    // Gamepad API 不可用时静默失败
+  }
+}
+
+// 启动手柄轮询
+let gamepadInterval = setInterval(pollGamepads, GAMEPAD_POLL_INTERVAL);
+
+// 手柄连接/断开事件
+window.addEventListener('gamepadconnected', (e) => {
+  updateControllerIndicator(true);
+});
+
+window.addEventListener('gamepaddisconnected', (e) => {
+  // 检查是否还有其他手柄
+  setTimeout(() => {
+    try {
+      const gps = navigator.getGamepads();
+      const anyConnected = Array.from(gps).some(g => g && g.connected);
+      if (!anyConnected) updateControllerIndicator(false);
+    } catch (_) {}
+  }, 300);
 });
 
 // ======= 事件绑定 =======
