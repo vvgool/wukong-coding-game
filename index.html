@@ -132,6 +132,18 @@
     box-shadow: 0 0 0 2px #ff9800, 0 0 16px rgba(255,152,0,0.35) !important;
     animation: pulse-goal 1.2s ease-in-out infinite;
   }
+  .cell.trail {
+    background: #e8e0d0;
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      rgba(139,105,20,0.08) 4px,
+      rgba(139,105,20,0.08) 8px
+    );
+    font-size: 16px;
+    color: #a09070;
+  }
   .cell.path-cell {
     background: #d7ccc8;
   }
@@ -566,6 +578,8 @@ let state = {
   executing: false,
   execIndex: 0,
   execTimer: null,
+  lastPath: [],      // [{r, c}, ...] 上一次执行走过的路径（轨迹用）
+  pathStartPos: null, // {r, c} 上一次执行的起点
 };
 
 // ======= DOM 引用 =======
@@ -685,13 +699,17 @@ function renderGrid() {
       const monster = monsters.find(m => m.r === r && m.c === c);
       const isObstacle = grid[r][c] === 1;
 
+      // 检查是否在历史路径轨迹上（不要盖过玩家和妖怪）
+      const isOnPath = !isPlayer && !monster && !isObstacle &&
+        state.lastPath.length > 1 &&
+        state.lastPath.some(p => p.r === r && p.c === c);
+
       if (isPlayer) {
         cell.classList.add('player');
         cell.textContent = '🐵';
       } else if (monster && monster.alive) {
         cell.classList.add('monster');
         cell.textContent = monster.emoji;
-        // 如果是当前目标格子，高亮
         if (targetMonster && targetMonster.r === r && targetMonster.c === c) {
           cell.classList.add('goal-highlight');
         }
@@ -701,6 +719,22 @@ function renderGrid() {
       } else if (isObstacle) {
         cell.classList.add('obstacle');
         cell.textContent = OBSTACLE_EMOJI;
+      } else if (isOnPath) {
+        cell.classList.add('trail');
+        // 方向箭头指示
+        const idx = state.lastPath.findIndex(p => p.r === r && p.c === c);
+        if (idx > 0 && idx < state.lastPath.length - 1) {
+          const prev = state.lastPath[idx - 1];
+          const next = state.lastPath[idx + 1];
+          if (prev.r === next.r) cell.textContent = '⬌';
+          else if (prev.c === next.c) cell.textContent = '⬍';
+          else cell.textContent = '·';
+        } else if (idx === state.lastPath.length - 1 && idx > 0) {
+          // 终点 — 显示X标记
+          cell.textContent = '✕';
+        } else {
+          cell.textContent = '·';
+        }
       } else {
         cell.textContent = '';
       }
@@ -759,10 +793,19 @@ function renderSequence() {
 
 function addDirection(dir) {
   if (state.phase !== 'planning') return;
+  // 开始新规划时清除历史路径轨迹
+  if (state.sequence.length === 0 && state.lastPath.length > 0) {
+    state.lastPath = [];
+    state.pathStartPos = null;
+    // 确保玩家在起始位置
+    state.player.r = state._startR;
+    state.player.c = state._startC;
+  }
   state.sequence.push(dir);
   sfxClick();
   renderSequence();
   updateButtons();
+  renderGrid(); // 刷新去掉轨迹
 }
 
 function clearSequence() {
@@ -801,9 +844,11 @@ function executeSequence() {
   setMessage('🏃 悟空正在执行 ...', 'info');
   stepDisp.textContent = '0';
 
-  // 存储初始位置（用于失败时重置）
+  // 存储初始位置
   state._startR = state.player.r;
   state._startC = state.player.c;
+  // 记录路径轨迹
+  state.lastPath = [{ r: state.player.r, c: state.player.c }];
 
   executeNextStep();
 }
@@ -861,6 +906,8 @@ function executeNextStep() {
   player.c = nc;
   state.stepCount++;
   stepDisp.textContent = state.stepCount;
+  // 记录路径
+  state.lastPath.push({ r: nr, c: nc });
 
   // 动画
   const oldCell = getCellEl(oldR, oldC);
@@ -888,29 +935,40 @@ function finishExecution() {
   state.executing = false;
   const alive = state.monsters.filter(m => m.alive).length;
 
+  // 记录路径起点
+  state.pathStartPos = { r: state._startR, c: state._startC };
+
   if (alive === 0) {
-    // 所有妖怪都打到了 — 通关！
+    // 所有妖怪都打到了 — 通关！玩家停留在最后位置
     state.phase = 'done';
+    state.sequence = [];
     sfxWin();
     setMessage(`🎉 全关通关！太厉害了！`, 'success');
     renderGrid();
+    renderSequence();
+    updateButtons();
     showWinModal();
   } else {
-    // 还有妖怪活着
-    const target = findTarget();
-    if (target) {
-      setMessage(`😅 还有妖怪没打到！${target.name} 还在${target.r+1}行${target.c+1}列，再规划一次路线吧`, 'info');
-    } else {
-      setMessage(`😅 还有妖怪没打到，再试试！`, 'info');
-    }
+    // 还有妖怪活着 — 回退悟空到起点，显示路径轨迹
+    state.player.r = state._startR;
+    state.player.c = state._startC;
     state.phase = 'planning';
+    state.sequence = [];
     execBtn.disabled = false;
     clearBtn.disabled = false;
     undoBtn.disabled = false;
+
+    const target = findTarget();
+    if (target) {
+      setMessage(`😅 还有妖怪没打到！${target.name} 还在${target.r+1}行${target.c+1}列，虚线轨迹是你刚才走的路线，重新规划吧`, 'info');
+    } else {
+      setMessage(`😅 还有妖怪没打到，再试试！虚线轨迹是你刚才的路线`, 'info');
+    }
+
     renderGrid();
+    renderSequence();
+    updateButtons();
   }
-  renderSequence();
-  updateButtons();
 }
 
 // ======= 通关弹窗 =======
@@ -978,6 +1036,8 @@ function resetLevel() {
   state.stepCount = 0;
   state.executing = false;
   state.execIndex = 0;
+  state.lastPath = [];
+  state.pathStartPos = null;
   state._startR = gen.player.r;
   state._startC = gen.player.c;
 
